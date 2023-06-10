@@ -250,8 +250,6 @@ int target_rtt_find_control_block(struct target *target,
 	size_t id_matched_length = 0;
 	const size_t id_length = strlen(id);
 
-	LOG_INFO("rtt: Searching for control block '%s'", id);
-
 	for (target_addr_t addr = *address; addr < address_end; addr += sizeof(buf)) {
 		int ret;
 

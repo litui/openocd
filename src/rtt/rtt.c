@@ -19,6 +19,8 @@
 
 #include "rtt.h"
 
+#define RETRY_MSG_TIME 1000
+
 static struct {
 	struct rtt_source source;
 	/** Control block. */
@@ -43,6 +45,7 @@ static struct {
 	size_t sink_list_length;
 
 	unsigned int polling_interval;
+	unsigned int ms_since_last_retry_for_cb;
 } rtt;
 
 int rtt_init(void)
@@ -58,6 +61,7 @@ int rtt_init(void)
 	rtt.started = false;
 
 	rtt.polling_interval = 100;
+	rtt.ms_since_last_retry_for_cb = RETRY_MSG_TIME;
 
 	return ERROR_OK;
 }
@@ -99,6 +103,7 @@ int rtt_setup(target_addr_t address, size_t size, const char *id)
 	strncpy(rtt.id, id, id_length + 1);
 	rtt.changed = true;
 	rtt.configured = true;
+	rtt.ms_since_last_retry_for_cb = RETRY_MSG_TIME;
 
 	return ERROR_OK;
 }
@@ -121,6 +126,11 @@ int rtt_register_source(const struct rtt_source source,
 	return ERROR_OK;
 }
 
+static int rtt_retry_cb(void *unused)
+{
+	return rtt_start();
+}
+
 int rtt_start(void)
 {
 	int ret;
@@ -136,11 +146,17 @@ int rtt_start(void)
 		rtt.changed = false;
 
 		if (rtt.found_cb) {
-			LOG_INFO("rtt: Control block found at 0x%" TARGET_PRIxADDR,
-				addr);
+			LOG_INFO("rtt: Control block with id '%s' found at 0x%" TARGET_PRIxADDR,
+				rtt.id, addr);
 			rtt.ctrl.address = addr;
 		} else {
-			LOG_INFO("rtt: No control block found");
+			target_register_timer_callback(rtt_retry_cb,
+				rtt.polling_interval, 0, NULL);
+			if (rtt.ms_since_last_retry_for_cb >= RETRY_MSG_TIME) {
+				LOG_INFO("rtt: No control block with id '%s' found, will retry", rtt.id);
+				rtt.ms_since_last_retry_for_cb = 0;
+			}
+			rtt.ms_since_last_retry_for_cb += rtt.polling_interval;
 			return ERROR_OK;
 		}
 	}
